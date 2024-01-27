@@ -10,10 +10,14 @@ bool isRecordingTimes = false;
 bool windowVisible = false;
 bool skipWarmups = true;
 bool recordScoredPoints = false;
+bool showCurrentMapAverage = false;
 
 // Global state
 uint roundNumber = 0;
 bool recentlyRecordedTime = false;
+dictionary playersCurrentMapAverages = dictionary();
+string NUM_ROUNDS_MAP = 'NUM_ROUNDS_MAP';
+string CURR_AVG_MAP = 'CURR_AVG_MAP';
 string outputFile = "dump";
 string currentMap = "";
 Knowledge currentMapMultilap = Knowledge::UNSURE;
@@ -35,6 +39,7 @@ void RenderInterface() {
         outputFile = UI::InputText("##", outputFile);
         skipWarmups = UI::Checkbox("Skip warm-ups", skipWarmups);
         recordScoredPoints = UI::Checkbox("Record points scored by player", recordScoredPoints);
+        showCurrentMapAverage = UI::Checkbox("Display players' map averages", showCurrentMapAverage);
         UI::BeginGroup();
         if (!isRecordingTimes && UI::Button("Start Recording")) {
             print("Recording match times to " + outputFile);
@@ -53,6 +58,19 @@ void RenderInterface() {
         UI::SameLine();
         if (UI::Button("Open Folder")) {
             OpenExplorerPath(IO::FromStorageFolder(""));
+        }
+        if (isRecordingTimes && showCurrentMapAverage) {
+            UI::Text("Current map averages:");
+            for (uint i = 0; i < playersCurrentMapAverages.GetSize(); i++) {
+                dictionary playerAvgInfo;
+                string playerName = playersCurrentMapAverages.GetKeys()[i];
+                playersCurrentMapAverages.Get(playerName, playerAvgInfo);
+                int currentAvg;
+                uint numRounds;
+                playerAvgInfo.Get(CURR_AVG_MAP, currentAvg);
+                playerAvgInfo.Get(NUM_ROUNDS_MAP, numRounds);
+                UI::Text(playerName + ": " + currentAvg + " (" + numRounds + ")");
+            }
         }
         UI::EndGroup();
         UI::End();
@@ -84,6 +102,7 @@ void recordMatchTimes() {
     if (currentMap != mapName) {
         roundNumber = 0;
         trackedPlayers.DeleteAll();
+        playersCurrentMapAverages.DeleteAll();
         currentMapMultilap = Knowledge::UNSURE;
         currentMap = mapName;
     }
@@ -109,6 +128,26 @@ void recordMatchTimes() {
             print("Recording time for " + player.Name);
             dumper.addEntry(mapName, player.WebServicesUserId, player.Name, player.LastCpTime, roundNumber, player.RoundPoints);
             trackedPlayers.Set(player.WebServicesUserId, 1);
+
+            // Calculate average if player has enabled
+            if (showCurrentMapAverage) {
+                dictionary playerAvgInfo;
+                if (playersCurrentMapAverages.Exists(player.Name)) {
+                    uint numRounds;
+                    int currentAvg;
+                    playersCurrentMapAverages.Get(player.Name, playerAvgInfo);
+                    playerAvgInfo.Get(NUM_ROUNDS_MAP, numRounds);
+                    playerAvgInfo.Get(CURR_AVG_MAP, currentAvg);
+                    auto newAverage = currentAvg + (player.LastCpTime - currentAvg) / (numRounds + 1);
+                    playerAvgInfo.Set(NUM_ROUNDS_MAP, numRounds + 1);
+                    playerAvgInfo.Set(CURR_AVG_MAP, newAverage);
+                } else {
+                    playerAvgInfo.Set(NUM_ROUNDS_MAP, 1);
+                    playerAvgInfo.Set(CURR_AVG_MAP, player.lastCpTime);
+                }
+                playersCurrentMapAverages.Set(player.Name, playerAvgInfo);
+            }
+
             recentlyRecordedTime = true;
             continue;
         }
